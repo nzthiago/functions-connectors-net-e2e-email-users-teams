@@ -1,4 +1,4 @@
-# Azure Functions Connectors Sample
+# Azure Functions with Connector Namespace - Email Processor sample with Users and Teams actions
 
 This sample demonstrates how to use **Azure Functions** with **Connector Namespace connectors** to react to events from external services. It listens for new emails arriving in a Microsoft 365 inbox, classifies each one with a small in-process importance heuristic, and — for the ones that pass the bar — enriches the message with **sender history** from the same mailbox, posts a formatted card to a **Microsoft Teams** channel, and **flags the source email** in Outlook so the recipient also has a server-side follow-up reminder.
 
