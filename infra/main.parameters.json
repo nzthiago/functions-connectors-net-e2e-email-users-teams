@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "userPrincipalId": {
+      "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "office365FunctionName": {
+      "value": "OnNewImportantEmailReceived"
+    },
+    "teamsTeamId": {
+      "value": "${TEAMS_TEAM_ID}"
+    },
+    "teamsChannelId": {
+      "value": "${TEAMS_CHANNEL_ID}"
+    },
+    "importantSenders": {
+      "value": "${IMPORTANT_SENDERS=}"
+    },
+    "internalDomains": {
+      "value": "${INTERNAL_DOMAINS=}"
+    }
+  }
+}

@@ -1,0 +1,122 @@
+<mxfile host="65bd71144e">
+    <diagram name="Email Triage Flow" id="flow1">
+        <mxGraphModel dx="1191" dy="692" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" value="Important Email Triage Sample — Azure Functions + Connector Namespace + Microsoft Graph + Teams" style="text;html=1;fontSize=20;fontStyle=1;align=center;verticalAlign=middle;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="20" width="1520" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane-source" value="Senders" style="swimlane;html=1;startSize=28;fillColor=#E1F5FE;strokeColor=#01579B;fontStyle=1;fontSize=14;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="80" width="220" height="640" as="geometry"/>
+                </mxCell>
+                <mxCell id="sender-internal" value="👤 Watched-group sender&#xa;(direct group member)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B3E5FC;strokeColor=#0277BD;fontSize=13;" parent="lane-source" vertex="1">
+                    <mxGeometry x="20" y="60" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="sender-leader" value="🎯 Leadership sender&#xa;(in IMPORTANT_SENDERS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B3E5FC;strokeColor=#0277BD;fontSize=13;" parent="lane-source" vertex="1">
+                    <mxGeometry x="20" y="160" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="sender-urgent" value="🔥 Any sender — urgent content&#xa;or High importance flag" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B3E5FC;strokeColor=#0277BD;fontSize=13;" parent="lane-source" vertex="1">
+                    <mxGeometry x="20" y="260" width="180" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="sender-noise" value="📨 Newsletters, FYIs,&#xa;casual mail" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#607D8B;fontSize=13;" parent="lane-source" vertex="1">
+                    <mxGeometry x="20" y="370" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="mailbox" value="📥 Office 365 Mailbox&#xa;(Inbox)" style="shape=mxgraph.office.servers.exchange_server;html=1;fillColor=#0078D4;strokeColor=none;fontColor=#FFFFFF;fontSize=14;fontStyle=1;verticalLabelPosition=bottom;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="320" y="320" width="120" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="gw-group" value="Azure Connector Namespace" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;fontSize=14;fontStyle=1;verticalAlign=top;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="100" width="320" height="300" as="geometry"/>
+                </mxCell>
+                <mxCell id="gw-trigger" value="📨 Office 365 Trigger&#xa;OnNewEmailV3 (Inbox, all importance)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=13;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="160" width="280" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="gw-conn-o365" value="🔗 Connection: office365" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="270" width="280" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="gw-conn-teams" value="🔗 Connection: teams" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="520" y="320" width="280" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="fa-group" value="Azure Function App — Flex Consumption (.NET 10 isolated)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#1B5E20;fontSize=14;fontStyle=1;verticalAlign=top;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="856" y="100" width="500" height="620" as="geometry"/>
+                </mxCell>
+                <mxCell id="fn-trigger" value="⚡ OnNewEmailReceived&lt;br&gt;[ConnectorTrigger] (HTTP webhook)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#A5D6A7;strokeColor=#1B5E20;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="906" y="150" width="400" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="fn-classifier" value="🧠 ImportanceClassifier.Classify(...):&lt;br&gt;✓ Important senders allow list&lt;br&gt;✓ email.Importance == &quot;high&quot;&lt;br&gt;✓ Subject/body urgency score ≥ 2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#1B5E20;fontSize=12;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="906" y="230" width="400" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="fn-decision" value="Important?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFF59D;strokeColor=#F57F17;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="1016" y="370" width="180" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="fn-drop" value="🗑️ Skip — log only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#455A64;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="1186" y="480" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="fn-resolve" value="&lt;font&gt;&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;✓ Get last X days of emails from sender&lt;/span&gt;&lt;br&gt;&lt;/font&gt;&lt;div&gt;&lt;font&gt;&lt;span style=&quot;color: rgb(0, 0, 0); background-color: transparent;&quot;&gt;✓&lt;/span&gt;&lt;span style=&quot;color: rgb(0, 0, 0); background-color: transparent;&quot;&gt;&amp;nbsp;Flag source email for follow up&lt;/span&gt;&lt;/font&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#1B5E20;fontSize=12;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="896" y="480" width="270" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="fn-post" value="📤 PostTriageCardAsync&#xa;TeamsClient.PostMessageToConversation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#A5D6A7;strokeColor=#1B5E20;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="906" y="630" width="400" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="teams" value="💬 Microsoft Teams&lt;br&gt;Triage Channel&lt;br&gt;&lt;br&gt;🟢 IN-TEAM / 🔴 EXTERNAL badge&lt;br&gt;Sender · Sender History&lt;br&gt;Why flagged: …reasons…&lt;div&gt;&lt;span style=&quot;color: rgb(0, 0, 0);&quot;&gt;Subject · Preview&lt;/span&gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE7F6;strokeColor=#4527A0;fontSize=13;align=center;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="490" width="320" height="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="e1" style="endArrow=classic;html=1;strokeColor=#0277BD;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="sender-internal" target="mailbox" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e2" style="endArrow=classic;html=1;strokeColor=#0277BD;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="sender-leader" target="mailbox" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e3" style="endArrow=classic;html=1;strokeColor=#0277BD;strokeWidth=2;" parent="1" source="sender-urgent" target="mailbox" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e4" style="endArrow=classic;html=1;strokeColor=#90A4AE;strokeWidth=2;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="sender-noise" target="mailbox" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e5" value="1. New mail event" style="endArrow=classic;html=1;strokeColor=#E65100;strokeWidth=2;fontSize=11;fontStyle=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="mailbox" target="gw-trigger" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e6" value="2. POST webhook&#xa;Office365OnNewEmailTriggerPayload" style="endArrow=classic;html=1;strokeColor=#1B5E20;strokeWidth=2;fontSize=11;fontStyle=1;" parent="1" source="gw-trigger" target="fn-trigger" edge="1">
+                    <mxGeometry x="0.2868" y="31" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e7" style="endArrow=classic;html=1;strokeColor=#1B5E20;strokeWidth=2;" parent="1" source="fn-trigger" target="fn-classifier" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e8" style="endArrow=classic;html=1;strokeColor=#1B5E20;strokeWidth=2;" parent="1" source="fn-classifier" target="fn-decision" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e9" value="No" style="endArrow=classic;html=1;strokeColor=#455A64;strokeWidth=2;fontSize=11;fontStyle=1;" parent="1" source="fn-decision" target="fn-drop" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e10" value="Yes" style="endArrow=classic;html=1;strokeColor=#1B5E20;strokeWidth=2;fontSize=11;fontStyle=1;" parent="1" source="fn-decision" target="fn-resolve" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e11" style="endArrow=classic;html=1;strokeColor=#1B5E20;strokeWidth=2;" parent="1" source="fn-resolve" target="fn-post" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e12" value="3. office365: GetEmails /&amp;nbsp;&lt;div&gt;FlagEmail&amp;nbsp;&lt;br&gt;&lt;/div&gt;" style="endArrow=classic;html=1;strokeColor=#E65100;strokeWidth=2;fontSize=11;fontStyle=1;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="fn-resolve" target="gw-conn-o365" edge="1">
+                    <mxGeometry x="-0.0395" y="-58" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e13" value="4. Post to Teams channel" style="endArrow=classic;html=1;strokeColor=#4527A0;strokeWidth=2;fontSize=11;fontStyle=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="fn-post" target="teams" edge="1">
+                    <mxGeometry x="-0.0849" y="20" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="legend" value="Flow steps&#xa;1️⃣ New mail event triggers Connector Namespace&#xa;2️⃣ Gateway POSTs payload to Function webhook&#xa;3️⃣ ImportanceClassifier decides; if important, enrich via Graph&#xa;4️⃣ Post structured triage card to Teams channel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFDE7;strokeColor=#F57F17;fontSize=11;align=left;verticalAlign=top;arcSize=0;" parent="1" vertex="1">
+                    <mxGeometry x="575" y="750" width="450" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="2" value="4. Post to Teams channel" style="endArrow=classic;html=1;strokeColor=#4527A0;strokeWidth=2;fontSize=11;fontStyle=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="teams" target="gw-conn-teams" edge="1">
+                    <mxGeometry x="-0.1506" y="-4" relative="1" as="geometry">
+                        <mxPoint x="880" y="468" as="sourcePoint"/>
+                        <mxPoint x="680" y="410" as="targetPoint"/>
+                        <mxPoint y="1" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

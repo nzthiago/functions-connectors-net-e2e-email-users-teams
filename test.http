@@ -1,0 +1,96 @@
+# Tip: You might need to modify the port value on the 
+# localhost URL when debugging in Visual Studio.
+#
+# Set these environment variables (or use a .env file):
+#   FUNCTION_APP_URL  - e.g. https://func-xxxx.azurewebsites.net
+#                       (use http://localhost:7071 for local `func start`)
+#   HTTP_POST_CODE    - the function app's `connector_extension` system key
+#                       (leave empty for local `func start`)
+#                       Cloud value:
+#                         az functionapp keys list -g <rg> -n <funcApp> \
+#                           --query systemKeys.connector_extension -o tsv
+
+@functionAppUrl = {{$dotenv FUNCTION_APP_URL}}
+@httpPostCode = {{$dotenv HTTP_POST_CODE}}
+
+### NOTE: Office 365 OnNewEmailV3 fires once per email — the gateway POSTs a
+### single-item envelope, NOT the batch shape from the SDK's TriggerCallbackPayload<T>.
+### Wire shape:  {"body": <GraphClientReceiveMessage>}
+### See ProcessEmail.cs `SingleEmailEnvelope` for the binding type.
+
+### Simulate Connector Namespace trigger callback — important email (matches sender list)
+POST {{functionAppUrl}}/runtime/webhooks/connector?functionName=OnNewImportantEmailReceived&code={{httpPostCode}}
+content-type: application/json
+
+{
+  "body": {
+    "id": "AAMkADlmOTA3NWNm",
+    "receivedDateTime": "2026-03-25T10:30:00+00:00",
+    "hasAttachments": false,
+    "subject": "Urgent: action needed on connector demo",
+    "bodyPreview": "Please review the connector demo before the MVP Summit session.",
+    "importance": "high",
+    "isRead": false,
+    "isHtml": true,
+    "body": "<html><body>Please review the connector demo before the MVP Summit session. This is critical.</body></html>",
+    "from": "thalme@microsoft.com",
+    "toRecipients": "recipient@microsoft.com",
+    "ccRecipients": null,
+    "bccRecipients": null,
+    "replyTo": null,
+    "attachments": []
+  }
+}
+
+### Simulate Connector Namespace trigger callback — non-important email (should be skipped)
+POST {{functionAppUrl}}/runtime/webhooks/connector?functionName=OnNewImportantEmailReceived&code={{httpPostCode}}
+content-type: application/json
+
+{
+  "body": {
+    "id": "AAMkADlmOTA3NWNn",
+    "receivedDateTime": "2026-03-25T11:00:00+00:00",
+    "hasAttachments": false,
+    "subject": "Weekly newsletter",
+    "bodyPreview": "Here are this week's top stories.",
+    "importance": "normal",
+    "isRead": false,
+    "isHtml": true,
+    "body": "<html><body>Here are this week's top stories.</body></html>",
+    "from": "newsletter@contoso.com",
+    "toRecipients": "recipient@microsoft.com",
+    "ccRecipients": null,
+    "bccRecipients": null,
+    "replyTo": null,
+    "attachments": []
+  }
+}
+
+### Simulate Connector Namespace trigger callback — IMPORTANT email
+### Sender is in IMPORTANT_SENDERS allowlist AND subject has bracketed urgency tag
+### + deadline language + "please review" ask. Will:
+###   1) hit ImportanceClassifier (allowlist + content score)
+###   2) call Graph (ListUsers → derive tenant domains → enrich sender)
+###   3) post a triage card to Teams
+POST {{functionAppUrl}}/runtime/webhooks/connector?functionName=OnNewImportantEmailReceived&code={{httpPostCode}}
+content-type: application/json
+
+{
+  "body": {
+    "id": "AAMkADlmOTA3NWNo",
+    "receivedDateTime": "2026-03-25T12:15:00+00:00",
+    "hasAttachments": false,
+    "subject": "[URGENT] please review connector demo before EOD",
+    "bodyPreview": "Need your sign-off on the connector demo before tomorrow's keynote rehearsal.",
+    "importance": "high",
+    "isRead": false,
+    "isHtml": true,
+    "body": "<html><body>Hey — need your sign-off on the connector demo before tomorrow's keynote rehearsal. Action required by EOD please.</body></html>",
+    "from": "paulyuk@microsoft.com",
+    "toRecipients": "thalme@microsoft.com",
+    "ccRecipients": null,
+    "bccRecipients": null,
+    "replyTo": null,
+    "attachments": []
+  }
+}
