@@ -10,7 +10,7 @@ param functionAppPrincipalId string = ''
 param userPrincipalId string = ''
 param tenantId string = tenant().tenantId
 
-resource connectorNamespace 'Microsoft.Web/connectorNamespaces@2026-05-01-preview' = {
+resource connectorNamespace 'Microsoft.Web/connectorGateways@2026-05-01-preview' = {
   name: name
   location: location
   tags: tags
@@ -19,7 +19,7 @@ resource connectorNamespace 'Microsoft.Web/connectorNamespaces@2026-05-01-previe
   }
 }
 
-resource connectorNamespaceConnection 'Microsoft.Web/connectorNamespaces/connections@2026-05-01-preview' = if (!empty(connectionName)) {
+resource connectorNamespaceConnection 'Microsoft.Web/connectorGateways/connections@2026-05-01-preview' = if (!empty(connectionName)) {
   parent: connectorNamespace
   name: connectionName
   properties: {
@@ -30,7 +30,7 @@ resource connectorNamespaceConnection 'Microsoft.Web/connectorNamespaces/connect
 // Allow the function's managed identity to call the Office 365 connection at
 // runtime — used both for the trigger callback and for the Office365Client SDK
 // calls (sender history + flag).
-resource office365ConnectionAccessPolicy 'Microsoft.Web/connectorNamespaces/connections/accessPolicies@2026-05-01-preview' = if (!empty(connectionName) && !empty(functionAppPrincipalId)) {
+resource office365ConnectionAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(connectionName) && !empty(functionAppPrincipalId)) {
   parent: connectorNamespaceConnection
   name: 'functionapp-msi'
   properties: {
@@ -44,7 +44,7 @@ resource office365ConnectionAccessPolicy 'Microsoft.Web/connectorNamespaces/conn
   }
 }
 
-resource office365ConnectionUserAccessPolicy 'Microsoft.Web/connectorNamespaces/connections/accessPolicies@2026-05-01-preview' = if (!empty(connectionName) && !empty(userPrincipalId)) {
+resource office365ConnectionUserAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(connectionName) && !empty(userPrincipalId)) {
   parent: connectorNamespaceConnection
   name: 'dev-user'
   properties: {
@@ -58,7 +58,7 @@ resource office365ConnectionUserAccessPolicy 'Microsoft.Web/connectorNamespaces/
   }
 }
 
-resource teamsConnection 'Microsoft.Web/connectorNamespaces/connections@2026-05-01-preview' = if (!empty(teamsConnectionName)) {
+resource teamsConnection 'Microsoft.Web/connectorGateways/connections@2026-05-01-preview' = if (!empty(teamsConnectionName)) {
   parent: connectorNamespace
   name: teamsConnectionName
   properties: {
@@ -66,7 +66,7 @@ resource teamsConnection 'Microsoft.Web/connectorNamespaces/connections@2026-05-
   }
 }
 
-resource teamsConnectionAccessPolicy 'Microsoft.Web/connectorNamespaces/connections/accessPolicies@2026-05-01-preview' = if (!empty(teamsConnectionName) && !empty(functionAppPrincipalId)) {
+resource teamsConnectionAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(teamsConnectionName) && !empty(functionAppPrincipalId)) {
   parent: teamsConnection
   name: 'functionapp-msi'
   properties: {
@@ -80,7 +80,7 @@ resource teamsConnectionAccessPolicy 'Microsoft.Web/connectorNamespaces/connecti
   }
 }
 
-resource teamsConnectionUserAccessPolicy 'Microsoft.Web/connectorNamespaces/connections/accessPolicies@2026-05-01-preview' = if (!empty(teamsConnectionName) && !empty(userPrincipalId)) {
+resource teamsConnectionUserAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(teamsConnectionName) && !empty(userPrincipalId)) {
   parent: teamsConnection
   name: 'dev-user'
   properties: {
@@ -94,7 +94,7 @@ resource teamsConnectionUserAccessPolicy 'Microsoft.Web/connectorNamespaces/conn
   }
 }
 
-resource office365usersConnection 'Microsoft.Web/connectorNamespaces/connections@2026-05-01-preview' = if (!empty(office365usersConnectionName)) {
+resource office365usersConnection 'Microsoft.Web/connectorGateways/connections@2026-05-01-preview' = if (!empty(office365usersConnectionName)) {
   parent: connectorNamespace
   name: office365usersConnectionName
   properties: {
@@ -102,7 +102,7 @@ resource office365usersConnection 'Microsoft.Web/connectorNamespaces/connections
   }
 }
 
-resource office365usersConnectionAccessPolicy 'Microsoft.Web/connectorNamespaces/connections/accessPolicies@2026-05-01-preview' = if (!empty(office365usersConnectionName) && !empty(functionAppPrincipalId)) {
+resource office365usersConnectionAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(office365usersConnectionName) && !empty(functionAppPrincipalId)) {
   parent: office365usersConnection
   name: 'functionapp-msi'
   properties: {
@@ -116,7 +116,7 @@ resource office365usersConnectionAccessPolicy 'Microsoft.Web/connectorNamespaces
   }
 }
 
-resource office365usersConnectionUserAccessPolicy 'Microsoft.Web/connectorNamespaces/connections/accessPolicies@2026-05-01-preview' = if (!empty(office365usersConnectionName) && !empty(userPrincipalId)) {
+resource office365usersConnectionUserAccessPolicy 'Microsoft.Web/connectorGateways/connections/accessPolicies@2026-05-01-preview' = if (!empty(office365usersConnectionName) && !empty(userPrincipalId)) {
   parent: office365usersConnection
   name: 'dev-user'
   properties: {

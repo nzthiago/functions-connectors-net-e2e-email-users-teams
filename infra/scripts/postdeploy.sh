@@ -38,9 +38,9 @@ connectorExtensionKey=$(az functionapp keys list -g "${resourceGroupName}" -n "$
 triggerName="${connectorNamespaceConnectionName}-trigger"
 callbackUrl="https://${functionAppName}.azurewebsites.net/runtime/webhooks/connector?functionName=${office365FunctionName}&code=${connectorExtensionKey}"
 
-apiUrl="https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${resourceGroupName}/providers/Microsoft.Web/connectorNamespaces/${connectorNamespaceName}/triggerconfigs/${triggerName}?api-version=2026-05-01-preview"
+apiUrl="https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${resourceGroupName}/providers/Microsoft.Web/connectorGateways/${connectorNamespaceName}/triggerconfigs/${triggerName}?api-version=2026-05-01-preview"
 
-body=$(cat <<EOF
+body=$(cat <<JSON
 {
   "properties": {
     "description": "Office 365 Outlook trigger config",
@@ -60,7 +60,7 @@ body=$(cat <<EOF
     }
   }
 }
-EOF
+JSON
 )
 
 echo -e "${CYAN}  API URL: ${apiUrl}${NC}"
@@ -70,28 +70,35 @@ az rest --method PUT --url "${apiUrl}" --body "${body}"
 
 echo -e "${GREEN}✅ Connector Namespace trigger config created successfully!${NC}"
 
+# --- Authorize the connector connections via Azure CLI ---
+# Portal authorization UX is not yet available, so we drive the OAuth consent flow
+# through the `connector-namespace` CLI extension. Each call opens a browser tab
+# for the signed-in user to consent to the connection.
 echo ""
-echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${YELLOW}║  ⚠️  IMPORTANT: Authorize the Connector Connections                 ║${NC}"
-echo -e "${YELLOW}╠══════════════════════════════════════════════════════════════════════╣${NC}"
-echo -e "${YELLOW}║                                                                      ║${NC}"
-echo -e "${YELLOW}║  Before testing, you must authorize all connector connections:       ║${NC}"
-echo -e "${YELLOW}║                                                                      ║${NC}"
-echo -e "${YELLOW}║  1. Open the Azure Portal: https://portal.azure.com                  ║${NC}"
-echo -e "${YELLOW}║  2. Navigate to Resource Group: ${resourceGroupName}${NC}"
-echo -e "${YELLOW}║  3. Open the Connector Namespace resource: ${connectorNamespaceName}${NC}"
-echo -e "${YELLOW}║  4. Go to Connections → authorize the Office 365 connection:         ║${NC}"
-echo -e "${YELLOW}║     ${connectorNamespaceConnectionName}                                ║${NC}"
-echo -e "${YELLOW}║     (used by both the trigger and for sender history + flag actions) ║${NC}"
-echo -e "${YELLOW}║  5. Authorize the Teams connection:                                  ║${NC}"
-echo -e "${YELLOW}║     ${connectorNamespaceTeamsConnectionName}                           ║${NC}"
-echo -e "${YELLOW}║  6. Authorize the Office 365 Users connection:                       ║${NC}"
-echo -e "${YELLOW}║     ${connectorNamespaceOffice365usersConnectionName}                  ║${NC}"
-echo -e "${YELLOW}║     Used to look up the sender's M365 profile (UserProfileAsync +    ║${NC}"
-echo -e "${YELLOW}║     ManagerAsync) for IN-ORG badging and card enrichment.            ║${NC}"
-echo -e "${YELLOW}║                                                                      ║${NC}"
-echo -e "${YELLOW}║  The trigger will NOT fire until Office 365 connection is authorized. ║${NC}"
-echo -e "${YELLOW}║  Teams notifications require the Teams connection to be authorized.   ║${NC}"
-echo -e "${YELLOW}║  IN-ORG badging requires the Office 365 Users connection.             ║${NC}"
-echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+echo -e "${YELLOW}Authorizing connector connections via Azure CLI...${NC}"
+
+if ! az extension show --name connector-namespace >/dev/null 2>&1; then
+  echo -e "${CYAN}Installing 'connector-namespace' Azure CLI extension...${NC}"
+  az extension add \
+    --source https://github.com/anthonychu/azure-cli-extensions/releases/download/connector-namespace-0.1.0/connector_namespace-0.1.0-py2.py3-none-any.whl \
+    --yes
+fi
+
+authorize_connection() {
+  local connectionName="$1"
+  local description="$2"
+  echo -e "${CYAN}-> Authorizing ${description} connection: ${connectionName}${NC}"
+  echo -e "${CYAN}   A browser tab will open for OAuth consent. Sign in with the account that should back this connection.${NC}"
+  az connector-namespace connection authorize \
+    --resource-group "${resourceGroupName}" \
+    --namespace-name "${connectorNamespaceName}" \
+    --name "${connectionName}"
+}
+
+authorize_connection "${connectorNamespaceConnectionName}"               "Office 365 Outlook (trigger + sender history + flag)"
+authorize_connection "${connectorNamespaceTeamsConnectionName}"          "Teams (post triage card)"
+authorize_connection "${connectorNamespaceOffice365usersConnectionName}" "Office 365 Users (IN-ORG badge + manager enrichment)"
+
+echo ""
+echo -e "${GREEN}✅ All connector connections authorized.${NC}"
 echo ""

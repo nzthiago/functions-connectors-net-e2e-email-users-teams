@@ -22,7 +22,7 @@ $connectorExtensionKey = (az functionapp keys list -g $resourceGroupName -n $fun
 $triggerName = "$connectorNamespaceConnectionName-trigger"
 $callbackUrl = "https://$functionAppName.azurewebsites.net/runtime/webhooks/connector?functionName=$office365FunctionName&code=$connectorExtensionKey"
 
-$apiUrl = "https://management.azure.com/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Web/connectorNamespaces/$connectorNamespaceName/triggerconfigs/${triggerName}?api-version=2026-05-01-preview"
+$apiUrl = "https://management.azure.com/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Web/connectorGateways/$connectorNamespaceName/triggerconfigs/${triggerName}?api-version=2026-05-01-preview"
 
 $body = @{
   properties = @{
@@ -59,28 +59,38 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "✅ Connector Namespace trigger config created successfully!" -ForegroundColor Green
 
+# --- Authorize the connector connections via Azure CLI ---
+# Portal authorization UX is not yet available, so we drive the OAuth consent flow
+# through the `connector-namespace` CLI extension. Each call opens a browser tab
+# for the signed-in user to consent to the connection.
 Write-Host ""
-Write-Host "╔══════════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-Write-Host "║  ⚠️  IMPORTANT: Authorize the Connector Connections                  ║" -ForegroundColor Yellow
-Write-Host "╠══════════════════════════════════════════════════════════════════════╣" -ForegroundColor Yellow
-Write-Host "║                                                                      ║" -ForegroundColor Yellow
-Write-Host "║  Before testing, you must authorize all connector connections:       ║" -ForegroundColor Yellow
-Write-Host "║                                                                      ║" -ForegroundColor Yellow
-Write-Host "║  1. Open the Azure Portal: https://portal.azure.com                  ║" -ForegroundColor Yellow
-Write-Host "║  2. Navigate to Resource Group: $resourceGroupName" -ForegroundColor Yellow
-Write-Host "║  3. Open the Connector Namespace resource: $connectorNamespaceName" -ForegroundColor Yellow
-Write-Host "║  4. Go to Connections -> authorize the Office 365 connection:         ║" -ForegroundColor Yellow
-Write-Host "║     $connectorNamespaceConnectionName" -ForegroundColor Yellow
-Write-Host "║     (used by both the trigger and for sender history + flag actions) ║" -ForegroundColor Yellow
-Write-Host "║  5. Authorize the Teams connection:                                  ║" -ForegroundColor Yellow
-Write-Host "║     $connectorNamespaceTeamsConnectionName" -ForegroundColor Yellow
-Write-Host "║  6. Authorize the Office 365 Users connection:                       ║" -ForegroundColor Yellow
-Write-Host "║     $connectorNamespaceOffice365usersConnectionName" -ForegroundColor Yellow
-Write-Host "║     Used to look up the sender's M365 profile (UserProfileAsync +    ║" -ForegroundColor Yellow
-Write-Host "║     ManagerAsync) for IN-ORG badging and card enrichment.            ║" -ForegroundColor Yellow
-Write-Host "║                                                                      ║" -ForegroundColor Yellow
-Write-Host "║  The trigger will NOT fire until Office 365 connection is authorized. ║" -ForegroundColor Yellow
-Write-Host "║  Teams notifications require the Teams connection to be authorized.   ║" -ForegroundColor Yellow
-Write-Host "║  IN-ORG badging requires the Office 365 Users connection.             ║" -ForegroundColor Yellow
-Write-Host "╚══════════════════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+Write-Host "Authorizing connector connections via Azure CLI..." -ForegroundColor Yellow
+
+$extInstalled = az extension show --name connector-namespace 2>$null
+if (-not $extInstalled) {
+    Write-Host "Installing 'connector-namespace' Azure CLI extension..." -ForegroundColor Cyan
+    az extension add `
+        --source https://github.com/anthonychu/azure-cli-extensions/releases/download/connector-namespace-0.1.0/connector_namespace-0.1.0-py2.py3-none-any.whl `
+        --yes
+}
+
+function Invoke-AuthorizeConnection {
+    param(
+        [Parameter(Mandatory)] [string] $ConnectionName,
+        [Parameter(Mandatory)] [string] $Description
+    )
+    Write-Host "-> Authorizing $Description connection: $ConnectionName" -ForegroundColor Cyan
+    Write-Host "   A browser tab will open for OAuth consent. Sign in with the account that should back this connection." -ForegroundColor Cyan
+    az connector-namespace connection authorize `
+        --resource-group $resourceGroupName `
+        --namespace-name $connectorNamespaceName `
+        --name $ConnectionName
+}
+
+Invoke-AuthorizeConnection -ConnectionName $connectorNamespaceConnectionName               -Description "Office 365 Outlook (trigger + sender history + flag)"
+Invoke-AuthorizeConnection -ConnectionName $connectorNamespaceTeamsConnectionName          -Description "Teams (post triage card)"
+Invoke-AuthorizeConnection -ConnectionName $connectorNamespaceOffice365usersConnectionName -Description "Office 365 Users (IN-ORG badge + manager enrichment)"
+
+Write-Host ""
+Write-Host "✅ All connector connections authorized." -ForegroundColor Green
 Write-Host ""
