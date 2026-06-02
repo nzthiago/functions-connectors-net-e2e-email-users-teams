@@ -70,7 +70,22 @@ echo ""
 echo -e "${YELLOW}Creating Connector Namespace trigger config...${NC}"
 
 echo -e "${CYAN}Fetching connector extension key for ${functionAppName}...${NC}"
-connectorExtensionKey=$(az functionapp keys list -g "${resourceGroupName}" -n "${functionAppName}" --query "systemKeys.connector_extension" -o tsv)
+# The system key is generated when the Functions runtime loads the
+# Microsoft.Azure.Functions.Worker.Extensions.Connectors extension,
+# which can take a few seconds after the function app finishes
+# deploying. Poll for it briefly before giving up.
+connectorExtensionKey=""
+deadline=$(($(date +%s) + 180))
+while [[ $(date +%s) -lt $deadline ]]; do
+    connectorExtensionKey=$(az functionapp keys list -g "${resourceGroupName}" -n "${functionAppName}" --query "systemKeys.connector_extension" -o tsv 2>/dev/null || echo "")
+    if [[ -n "${connectorExtensionKey}" ]]; then break; fi
+    echo -e "${YELLOW}  connector_extension key not yet present; waiting 10s...${NC}"
+    sleep 10
+done
+if [[ -z "${connectorExtensionKey}" ]]; then
+    echo -e "${RED}ERROR: connector_extension system key never appeared on ${functionAppName}. The Microsoft.Azure.Functions.Worker.Extensions.Connectors extension may have failed to load. Check the function app's log stream.${NC}" >&2
+    exit 1
+fi
 
 triggerName="${connectorNamespaceConnectionName}-trigger"
 callbackUrl="https://${functionAppName}.azurewebsites.net/runtime/webhooks/connector?functionName=${office365FunctionName}&code=${connectorExtensionKey}"
@@ -83,7 +98,17 @@ parameters=$(jq -nc '[{name:"folderPath", value:"Inbox"}]')
 # `@triggerBody()`), so we omit it and let the runtime use the
 # trigger's default output as the POST body. Auth + callback URL
 # go in via the notification-details JSON.
+#
+# We write the dict-shaped args to temp files and pass them with the
+# `@file` syntax. Passing them inline as JSON strings makes the CLI's
+# shorthand parser try to interpret the leading `{` as the shorthand
+# `key=value` syntax, which fails on colons inside URLs.
 notificationDetails=$(jq -nc --arg url "${callbackUrl}" '{callbackUrl:$url, httpMethod:"Post"}')
+connDetailsFile=$(mktemp)
+notifDetailsFile=$(mktemp)
+echo "${connectionDetails}"   > "${connDetailsFile}"
+echo "${notificationDetails}" > "${notifDetailsFile}"
+trap 'rm -f "${connDetailsFile}" "${notifDetailsFile}"' EXIT
 
 echo -e "${CYAN}  Trigger name: ${triggerName}${NC}"
 echo -e "${CYAN}  Callback URL: ${callbackUrl}${NC}"
@@ -99,10 +124,10 @@ az connector-namespace trigger create \
     -g "${resourceGroupName}" \
     --namespace "${connectorNamespaceName}" \
     -n "${triggerName}" \
-    --connection-details "${connectionDetails}" \
+    --connection-details "@${connDetailsFile}" \
     --operation-name "OnNewEmailV3" \
     --parameters "${parameters}" \
-    --notification-details "${notificationDetails}" \
+    --notification-details "@${notifDetailsFile}" \
     --state "Enabled" \
     --description "When a new email arrives in the consented Office 365 mailbox, POST the payload to the function's connector webhook."
 
@@ -148,11 +173,16 @@ authorize_connection() {
         return
     fi
 
-    local params consentJson link
-    params='[{"parameterName":"token","redirectUrl":"https://portal.azure.com"}]'
+    local params consentJson link paramsFile
+    # `list-consent-links` --parameters: the URL value contains a colon
+    # which makes the CLI's shorthand parser barf. Write to a temp file
+    # and pass with the @file syntax.
+    paramsFile=$(mktemp)
+    echo '[{"parameterName":"token","redirectUrl":"https://portal.azure.com"}]' > "${paramsFile}"
     consentJson=$(az connector-namespace connection list-consent-links \
         -g "${resourceGroupName}" --namespace "${connectorNamespaceName}" \
-        --connection-name "${connectionName}" --parameters "${params}" -o json 2>/dev/null || echo "")
+        --connection-name "${connectionName}" --parameters "@${paramsFile}" -o json 2>/dev/null || echo "")
+    rm -f "${paramsFile}"
     link=$(echo "${consentJson}" | jq -r '.value[0].link // empty' 2>/dev/null || echo "")
     if [[ -z "${link}" ]]; then
         echo -e "${RED}   list-consent-links returned no link; skipping${NC}"

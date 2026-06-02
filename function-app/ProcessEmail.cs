@@ -6,6 +6,7 @@ using Azure.Connectors.Sdk.Office365;
 using Azure.Connectors.Sdk.Office365Users;
 using Azure.Connectors.Sdk.Teams;
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Azure.Connectors.Sdk.Office365.Models;
 using Azure.Connectors.Sdk.Teams.Models;
 using Azure.Connectors.Sdk;
@@ -55,20 +56,6 @@ namespace Company.Function
         //   profile == null, notFound  → external sender (404 from UserProfileAsync)
         //   profile == null, !notFound → transient lookup failure, badge omitted
         private static readonly ConcurrentDictionary<string, (SenderProfile? profile, bool notFound, DateTime cachedAt)> SenderProfileCache = new(StringComparer.OrdinalIgnoreCase);
-
-        // Derived from the empty marker DynamicPostMessageRequest so the SDK serializes
-        // the runtime fields below into the dynamic-schema POST body the connector expects.
-        private sealed class PostMessageRequest : DynamicPostMessageRequest
-        {
-            public RecipientInfo Recipient { get; set; } = new();
-            public string MessageBody { get; set; } = string.Empty;
-        }
-
-        private sealed class RecipientInfo
-        {
-            public string GroupId { get; set; } = string.Empty;
-            public string ChannelId { get; set; } = string.Empty;
-        }
 
         private sealed record SenderHistory(int TotalRecent, int LastWeek, DateTime? MostRecent)
         {
@@ -363,15 +350,23 @@ namespace Company.Function
                 $"<b>Preview:</b> {email.BodyPreview ?? "(no preview)"}<br/>" +
                 $"<i>(source email has been flagged in Outlook)</i>";
 
-            var request = new PostMessageRequest
-            {
-                Recipient = new RecipientInfo
+            // DynamicPostMessageRequest is a *dynamic-schema* body whose properties
+            // are resolved at runtime by the connector's schema discovery endpoint.
+            // The connector backend expects camelCase keys (`recipient.groupId`,
+            // `recipient.channelId`, `messageBody`). System.Text.Json preserves the
+            // declared casing of strongly-typed properties on subclasses, so the
+            // safe way to populate the body is via AdditionalProperties (decorated
+            // with [JsonExtensionData] on the base class) using literal camelCase
+            // keys — matching the official sample at
+            // https://github.com/Azure/Connectors-NET-Samples/blob/main/DirectConnector/TeamsFunctions.cs
+            var request = new DynamicPostMessageRequest();
+            request.AdditionalProperties["recipient"] = JsonSerializer.SerializeToElement(
+                new
                 {
-                    GroupId = _teamsTeamId,
-                    ChannelId = _teamsChannelId
-                },
-                MessageBody = messageBody
-            };
+                    groupId = _teamsTeamId,
+                    channelId = _teamsChannelId,
+                });
+            request.AdditionalProperties["messageBody"] = JsonSerializer.SerializeToElement(messageBody);
 
             try
             {
