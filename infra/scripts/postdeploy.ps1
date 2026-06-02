@@ -1,56 +1,100 @@
+# Post-deployment configuration for the Functions + Connector Namespace sample.
+#
+# Uses the official `connector-namespace` Azure CLI extension from
+# https://github.com/Azure/Connectors. Two responsibilities:
+#   1. Create the Office 365 OnNewEmailV3 trigger config that POSTs new
+#      emails to the function's connector webhook URL.
+#   2. Walk the operator through OAuth consent for each of the three
+#      connections (Office 365 Outlook, Teams, Office 365 Users) by
+#      opening the consent link in a browser and polling until the
+#      connection flips to `Connected`.
+#
+# Connection access policies for the function-app MI and the deployer
+# user are created by Bicep (infra/connectorNamespace.bicep), so this
+# script does not grant ACLs.
+
 Write-Host "Post-deployment configuration..." -ForegroundColor Yellow
 
-# Get outputs from azd
+# --- Read azd outputs --------------------------------------------------------
 $outputs = azd env get-values --output json | ConvertFrom-Json
 
-$subscriptionId = (az account show --query id -o tsv)
-$resourceGroupName = $outputs.resourceGroupName
-$connectorNamespaceName = $outputs.connectorNamespaceName
-$connectorNamespaceConnectionName = $outputs.connectorNamespaceConnectionName
-$connectorNamespaceTeamsConnectionName = $outputs.connectorNamespaceTeamsConnectionName
+$subscriptionId                              = (az account show --query id -o tsv)
+$resourceGroupName                           = $outputs.resourceGroupName
+$connectorNamespaceName                      = $outputs.connectorNamespaceName
+$connectorNamespaceConnectionName            = $outputs.connectorNamespaceConnectionName
+$connectorNamespaceTeamsConnectionName       = $outputs.connectorNamespaceTeamsConnectionName
 $connectorNamespaceOffice365usersConnectionName = $outputs.connectorNamespaceOffice365usersConnectionName
-$functionAppName = $outputs.functionAppName
-$office365FunctionName = $outputs.office365FunctionName
+$functionAppName                             = $outputs.functionAppName
+$office365FunctionName                       = $outputs.office365FunctionName
 
-# --- Create Connector Namespace trigger config ---
+# --- Install the official connector-namespace az CLI extension --------------
+# Resolve the latest released wheel URL from the Azure/Connectors GitHub
+# releases. All releases are marked pre-release so the standard
+# /releases/latest endpoint 404s; we fetch /releases?per_page=1 instead.
+# Pin a specific version by setting CONNECTOR_NAMESPACE_EXT_URL in the
+# environment before running azd up.
+if (-not $env:CONNECTOR_NAMESPACE_EXT_URL) {
+    try {
+        $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/Azure/Connectors/releases?per_page=1"
+        $asset = $rel[0].assets | Where-Object {
+            $_.name -match '^connector_namespace.*\.whl$'
+        } | Select-Object -First 1
+        if ($asset) {
+            $env:CONNECTOR_NAMESPACE_EXT_URL = $asset.browser_download_url
+        }
+    } catch {
+        Write-Host "WARNING: could not query Azure/Connectors releases: $_" -ForegroundColor Yellow
+    }
+}
+if (-not $env:CONNECTOR_NAMESPACE_EXT_URL) {
+    Write-Host "ERROR: could not resolve connector-namespace extension URL from Azure/Connectors releases" -ForegroundColor Red
+    exit 2
+}
+$extInstalled = az extension show --name connector-namespace --query name -o tsv 2>$null
+if (-not $extInstalled) {
+    Write-Host "Installing 'connector-namespace' Azure CLI extension from $($env:CONNECTOR_NAMESPACE_EXT_URL)" -ForegroundColor Cyan
+    az extension add --upgrade --yes --source $env:CONNECTOR_NAMESPACE_EXT_URL
+}
+
+# --- Create Connector Namespace trigger config ------------------------------
+Write-Host ""
 Write-Host "Creating Connector Namespace trigger config..." -ForegroundColor Yellow
 
-# Fetch the connector extension system key
 Write-Host "Fetching connector extension key for $functionAppName..." -ForegroundColor Cyan
 $connectorExtensionKey = (az functionapp keys list -g $resourceGroupName -n $functionAppName --query "systemKeys.connector_extension" -o tsv)
 
 $triggerName = "$connectorNamespaceConnectionName-trigger"
 $callbackUrl = "https://$functionAppName.azurewebsites.net/runtime/webhooks/connector?functionName=$office365FunctionName&code=$connectorExtensionKey"
 
-$apiUrl = "https://management.azure.com/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Web/connectorGateways/$connectorNamespaceName/triggerconfigs/${triggerName}?api-version=2026-05-01-preview"
+# The connector-namespace extension's --notification-details parser
+# expects `body` to be a dict (not the Logic Apps template string
+# `@triggerBody()`), so we omit it and let the runtime use the
+# trigger's default output as the POST body. Auth + callback URL
+# go in via the notification-details JSON.
+$connectionDetails   = (@{ connectorName = "office365"; connectionName = $connectorNamespaceConnectionName } | ConvertTo-Json -Compress)
+$parameters          = (@(@{ name = "folderPath"; value = "Inbox" }) | ConvertTo-Json -Compress)
+$notificationDetails = (@{ callbackUrl = $callbackUrl; httpMethod = "Post" } | ConvertTo-Json -Compress)
 
-$body = @{
-  properties = @{
-    description = "Office 365 Outlook trigger config"
-    connectionDetails = @{
-      connectorName = "office365"
-      connectionName = $connectorNamespaceConnectionName
-    }
-    operationName = "OnNewEmailV3"
-    parameters = @(
-      @{ name = "folderPath"; value = "Inbox" }
-      @{ name = "fetchOnlyWithAttachment"; value = "false" }
-      @{ name = "includeAttachments"; value = "false" }
-    )
-    notificationDetails = @{
-      callbackUrl = $callbackUrl
-    }
-  }
-} | ConvertTo-Json -Depth 5
-
-$bodyFile = [System.IO.Path]::GetTempFileName()
-$body | Out-File -FilePath $bodyFile -Encoding utf8
-
-Write-Host "  API URL: $apiUrl" -ForegroundColor Cyan
+Write-Host "  Trigger name: $triggerName" -ForegroundColor Cyan
 Write-Host "  Callback URL: $callbackUrl" -ForegroundColor Cyan
 
-az rest --method PUT --url $apiUrl --body "@$bodyFile" --headers "Content-Type=application/json"
-Remove-Item $bodyFile -ErrorAction SilentlyContinue
+# Best-effort idempotency: delete any prior config with this name.
+az connector-namespace trigger delete `
+    -g $resourceGroupName `
+    --namespace $connectorNamespaceName `
+    -n $triggerName `
+    --yes 2>$null | Out-Null
+
+az connector-namespace trigger create `
+    -g $resourceGroupName `
+    --namespace $connectorNamespaceName `
+    -n $triggerName `
+    --connection-details $connectionDetails `
+    --operation-name "OnNewEmailV3" `
+    --parameters $parameters `
+    --notification-details $notificationDetails `
+    --state "Enabled" `
+    --description "When a new email arrives in the consented Office 365 mailbox, POST the payload to the function's connector webhook."
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Failed to create Connector Namespace trigger config." -ForegroundColor Red
@@ -59,20 +103,19 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "✅ Connector Namespace trigger config created successfully!" -ForegroundColor Green
 
-# --- Authorize the connector connections via Azure CLI ---
-# Portal authorization UX is not yet available, so we drive the OAuth consent flow
-# through the `connector-namespace` CLI extension. Each call opens a browser tab
-# for the signed-in user to consent to the connection.
+# --- Authorize the connector connections (OAuth consent) --------------------
+# Portal authorization UX is not yet available for Connector Namespace
+# connections, so we drive OAuth consent through the CLI:
+#   1. `connection list-consent-links` returns a one-shot logic-apis
+#      consent URL with `state` already baked in.
+#   2. We open the URL in a browser. The user signs in, consent is
+#      persisted server-side, and the page redirects to portal.azure.com
+#      (the well-known target the consent service has special-cased
+#      for "no app to redirect to" CLI flows).
+#   3. Poll `connection show --query properties.overallStatus` until it
+#      flips to `Connected`.
 Write-Host ""
 Write-Host "Authorizing connector connections via Azure CLI..." -ForegroundColor Yellow
-
-$extInstalled = az extension show --name connector-namespace 2>$null
-if (-not $extInstalled) {
-    Write-Host "Installing 'connector-namespace' Azure CLI extension..." -ForegroundColor Cyan
-    az extension add `
-        --source https://github.com/anthonychu/azure-cli-extensions/releases/download/connector-namespace-0.1.0/connector_namespace-0.1.0-py2.py3-none-any.whl `
-        --yes
-}
 
 function Invoke-AuthorizeConnection {
     param(
@@ -80,11 +123,51 @@ function Invoke-AuthorizeConnection {
         [Parameter(Mandatory)] [string] $Description
     )
     Write-Host "-> Authorizing $Description connection: $ConnectionName" -ForegroundColor Cyan
-    Write-Host "   A browser tab will open for OAuth consent. Sign in with the account that should back this connection." -ForegroundColor Cyan
-    az connector-namespace connection authorize `
-        --resource-group $resourceGroupName `
-        --namespace-name $connectorNamespaceName `
-        --name $ConnectionName
+
+    $currentStatus = az connector-namespace connection show `
+        -g $resourceGroupName --namespace $connectorNamespaceName `
+        -n $ConnectionName --query "properties.overallStatus" -o tsv 2>$null
+    if ($currentStatus -and $currentStatus.ToLower() -eq "connected") {
+        Write-Host "   already Connected; skipping consent flow" -ForegroundColor Green
+        return
+    }
+
+    $params = '[{"parameterName":"token","redirectUrl":"https://portal.azure.com"}]'
+    $consentJson = az connector-namespace connection list-consent-links `
+        -g $resourceGroupName --namespace $connectorNamespaceName `
+        --connection-name $ConnectionName --parameters $params -o json 2>$null
+    if (-not $consentJson) {
+        Write-Host "   list-consent-links returned no output; skipping" -ForegroundColor Red
+        return
+    }
+    $link = ($consentJson | ConvertFrom-Json).value[0].link
+    if (-not $link) {
+        Write-Host "   list-consent-links returned no link; skipping" -ForegroundColor Red
+        return
+    }
+
+    Write-Host "   opening browser for OAuth consent..." -ForegroundColor Cyan
+    Write-Host "   (if no tab opens, paste this URL manually:" -ForegroundColor Cyan
+    Write-Host "      $link)" -ForegroundColor Cyan
+    try { Start-Process $link | Out-Null } catch { Write-Host "   Start-Process failed: $_" -ForegroundColor Yellow }
+
+    $deadline = (Get-Date).AddMinutes(5)
+    $lastStatus = ""
+    while ((Get-Date) -lt $deadline) {
+        $s = az connector-namespace connection show `
+            -g $resourceGroupName --namespace $connectorNamespaceName `
+            -n $ConnectionName --query "properties.overallStatus" -o tsv 2>$null
+        if ($s -ne $lastStatus) {
+            Write-Host "   status: $(if ($s) { $s } else { '?' })" -ForegroundColor Cyan
+            $lastStatus = $s
+        }
+        if ($s -and $s.ToLower() -eq "connected") {
+            Write-Host "   ✓ $ConnectionName authenticated" -ForegroundColor Green
+            return
+        }
+        Start-Sleep -Seconds 3
+    }
+    Write-Host "   timed out waiting for consent (5 min). Re-run azd up or this script when ready." -ForegroundColor Yellow
 }
 
 Invoke-AuthorizeConnection -ConnectionName $connectorNamespaceConnectionName               -Description "Office 365 Outlook (trigger + sender history + flag)"
