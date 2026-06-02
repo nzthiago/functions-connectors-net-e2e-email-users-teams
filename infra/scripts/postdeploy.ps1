@@ -61,7 +61,22 @@ Write-Host ""
 Write-Host "Creating Connector Namespace trigger config..." -ForegroundColor Yellow
 
 Write-Host "Fetching connector extension key for $functionAppName..." -ForegroundColor Cyan
-$connectorExtensionKey = (az functionapp keys list -g $resourceGroupName -n $functionAppName --query "systemKeys.connector_extension" -o tsv)
+# The system key is generated when the Functions runtime loads the
+# Microsoft.Azure.Functions.Worker.Extensions.Connectors extension,
+# which can take a few seconds after the function app finishes
+# deploying. Poll for it briefly before giving up.
+$connectorExtensionKey = $null
+$deadline = (Get-Date).AddMinutes(3)
+while ((Get-Date) -lt $deadline) {
+    $connectorExtensionKey = (az functionapp keys list -g $resourceGroupName -n $functionAppName --query "systemKeys.connector_extension" -o tsv 2>$null)
+    if ($connectorExtensionKey) { break }
+    Write-Host "  connector_extension key not yet present; waiting 10s..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 10
+}
+if (-not $connectorExtensionKey) {
+    Write-Host "ERROR: connector_extension system key never appeared on $functionAppName. The Microsoft.Azure.Functions.Worker.Extensions.Connectors extension may have failed to load. Check the function app's log stream." -ForegroundColor Red
+    exit 1
+}
 
 $triggerName = "$connectorNamespaceConnectionName-trigger"
 $callbackUrl = "https://$functionAppName.azurewebsites.net/runtime/webhooks/connector?functionName=$office365FunctionName&code=$connectorExtensionKey"
@@ -71,9 +86,19 @@ $callbackUrl = "https://$functionAppName.azurewebsites.net/runtime/webhooks/conn
 # `@triggerBody()`), so we omit it and let the runtime use the
 # trigger's default output as the POST body. Auth + callback URL
 # go in via the notification-details JSON.
-$connectionDetails   = (@{ connectorName = "office365"; connectionName = $connectorNamespaceConnectionName } | ConvertTo-Json -Compress)
-$parameters          = (@(@{ name = "folderPath"; value = "Inbox" }) | ConvertTo-Json -Compress)
-$notificationDetails = (@{ callbackUrl = $callbackUrl; httpMethod = "Post" } | ConvertTo-Json -Compress)
+#
+# We write the dict-shaped args to temp files and pass them with the
+# `@file` syntax. Passing them inline as JSON strings makes the CLI's
+# shorthand parser try to interpret the leading `{` as the shorthand
+# `key=value` syntax, which fails on colons inside URLs.
+# Hand-write the parameters array: PowerShell unwraps single-element
+# arrays during ConvertTo-Json (producing `{...}` instead of `[{...}]`),
+# which the CLI parser rejects with "list type value expected".
+$connDetailsFile  = New-TemporaryFile
+@{ connectorName = "office365"; connectionName = $connectorNamespaceConnectionName } | ConvertTo-Json -Compress | Set-Content -Path $connDetailsFile -Encoding utf8
+$notifDetailsFile = New-TemporaryFile
+@{ callbackUrl = $callbackUrl; httpMethod = "Post" } | ConvertTo-Json -Compress | Set-Content -Path $notifDetailsFile -Encoding utf8
+$parameters = '[{"name":"folderPath","value":"Inbox"}]'
 
 Write-Host "  Trigger name: $triggerName" -ForegroundColor Cyan
 Write-Host "  Callback URL: $callbackUrl" -ForegroundColor Cyan
@@ -89,12 +114,14 @@ az connector-namespace trigger create `
     -g $resourceGroupName `
     --namespace $connectorNamespaceName `
     -n $triggerName `
-    --connection-details $connectionDetails `
+    --connection-details "@$connDetailsFile" `
     --operation-name "OnNewEmailV3" `
     --parameters $parameters `
-    --notification-details $notificationDetails `
+    --notification-details "@$notifDetailsFile" `
     --state "Enabled" `
     --description "When a new email arrives in the consented Office 365 mailbox, POST the payload to the function's connector webhook."
+
+Remove-Item $connDetailsFile, $notifDetailsFile -ErrorAction SilentlyContinue
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Failed to create Connector Namespace trigger config." -ForegroundColor Red
@@ -132,10 +159,15 @@ function Invoke-AuthorizeConnection {
         return
     }
 
-    $params = '[{"parameterName":"token","redirectUrl":"https://portal.azure.com"}]'
+    # `list-consent-links` --parameters: the URL value contains a colon
+    # which makes the CLI's shorthand parser barf. Write to a temp file
+    # and pass with the @file syntax.
+    $paramsFile = New-TemporaryFile
+    '[{"parameterName":"token","redirectUrl":"https://portal.azure.com"}]' | Set-Content -Path $paramsFile -Encoding utf8
     $consentJson = az connector-namespace connection list-consent-links `
         -g $resourceGroupName --namespace $connectorNamespaceName `
-        --connection-name $ConnectionName --parameters $params -o json 2>$null
+        --connection-name $ConnectionName --parameters "@$paramsFile" -o json 2>$null
+    Remove-Item $paramsFile -ErrorAction SilentlyContinue
     if (-not $consentJson) {
         Write-Host "   list-consent-links returned no output; skipping" -ForegroundColor Red
         return
